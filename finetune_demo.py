@@ -13,27 +13,36 @@ from nets.pruning import L1Pruner
 import argparse
 
 
-def create_dummy_dataloader(batch_size=2, num_batches=10, input_size=512, num_classes=21):
+def create_dummy_dataloader(batch_size=2, num_batches=10, input_size=512, num_classes=21, seed=42):
     """
     Create a dummy dataloader for demonstration purposes.
     Replace this with your actual data loading logic.
+    
+    Args:
+        batch_size: Batch size
+        num_batches: Number of batches
+        input_size: Image size
+        num_classes: Number of classes
+        seed: Random seed for reproducibility
     """
     class DummyDataset(torch.utils.data.Dataset):
-        def __init__(self, num_samples, input_size, num_classes):
+        def __init__(self, num_samples, input_size, num_classes, seed):
             self.num_samples = num_samples
             self.input_size = input_size
             self.num_classes = num_classes
+            self.seed = seed
         
         def __len__(self):
             return self.num_samples
         
         def __getitem__(self, idx):
-            # Generate random image and label
-            image = torch.randn(3, self.input_size, self.input_size)
-            label = torch.randint(0, self.num_classes, (self.input_size, self.input_size))
+            # Use deterministic random generation based on idx and seed
+            generator = torch.Generator().manual_seed(self.seed + idx)
+            image = torch.randn(3, self.input_size, self.input_size, generator=generator)
+            label = torch.randint(0, self.num_classes, (self.input_size, self.input_size), generator=generator)
             return image, label
     
-    dataset = DummyDataset(num_batches * batch_size, input_size, num_classes)
+    dataset = DummyDataset(num_batches * batch_size, input_size, num_classes, seed)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,

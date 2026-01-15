@@ -136,7 +136,7 @@ def demo_l1_pruning(
         else:
             pruned_logits = pruned_output
             
-        output_diff = torch.abs(original_logits - pruned_logits).mean().item()
+        output_diff = torch.mean(torch.abs(original_logits - pruned_logits)).item()
         print(f"  Average output difference: {output_diff:.6f}")
         
     # Step 6: Compare models
@@ -175,6 +175,8 @@ def main():
     parser.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cuda', 'cpu'],
                         help='Device to run on')
+    parser.add_argument('--save_path', type=str, default=None,
+                        help='Path to save pruned model (default: auto-generated with timestamp)')
     
     args = parser.parse_args()
     
@@ -201,7 +203,13 @@ def main():
     )
     
     # Optionally save the pruned model
-    save_path = f'pruned_segformer_{args.phi}_ratio{args.pruning_ratio:.2f}.pth'
+    if args.save_path:
+        save_path = args.save_path
+    else:
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        save_path = f'pruned_segformer_{args.phi}_ratio{args.pruning_ratio:.2f}_{timestamp}.pth'
+    
     print(f"\nSaving pruned model to: {save_path}")
     torch.save(pruned_model.state_dict(), save_path)
     print("✓ Model saved successfully!")

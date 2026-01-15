@@ -50,12 +50,13 @@ class L1Pruner:
                 # Get weights: shape [out_channels, in_channels, kernel_h, kernel_w]
                 weight = module.weight.data
                 
-                # Compute L1 norm for each output channel
-                # Sum over all dimensions except output channel dimension
-                for channel_idx in range(weight.shape[0]):
-                    channel_weight = weight[channel_idx]
-                    l1_norm = torch.sum(torch.abs(channel_weight)).item()
-                    importance_list.append((name, channel_idx, l1_norm))
+                # Compute L1 norm for each output channel efficiently
+                # Sum over all dimensions except output channel dimension (dim 0)
+                l1_norms = torch.sum(torch.abs(weight), dim=(1, 2, 3)).cpu().numpy()
+                
+                # Add to importance list
+                for channel_idx, l1_norm in enumerate(l1_norms):
+                    importance_list.append((name, channel_idx, float(l1_norm)))
         
         self.channel_importance = importance_list
         return importance_list
@@ -87,12 +88,15 @@ class L1Pruner:
         total_channels = len(sorted_channels)
         num_prune = int(total_channels * self.pruning_ratio)
         
-        # Initialize masks for each layer
+        # Get model device
+        device = next(self.model.parameters()).device
+        
+        # Initialize masks for each layer on the same device as the model
         masks = {}
         for name, module in self.model.named_modules():
             if isinstance(module, nn.Conv2d):
                 num_channels = module.weight.data.shape[0]
-                masks[name] = torch.ones(num_channels, dtype=torch.bool)
+                masks[name] = torch.ones(num_channels, dtype=torch.bool, device=device)
         
         # Mark channels for pruning (least important ones)
         channels_to_prune = sorted_channels[:num_prune]
@@ -126,25 +130,20 @@ class L1Pruner:
         """
         Rebuild the model architecture with pruned channels permanently removed.
         
-        This is a hard pruning approach that creates a new model with fewer parameters.
+        Note: This implementation applies soft pruning (zeroing weights) as a 
+        foundation. Full hard pruning requires model-specific architecture 
+        reconstruction logic. See PRUNING_GUIDE.md for details on implementing 
+        hard pruning.
         
         Returns:
-            New pruned model
+            Pruned model (with soft pruning applied)
         """
         if not self.pruning_masks:
             self.determine_pruning_masks()
         
-        # Create a mapping of layer names to their new output channel counts
-        new_out_channels = {}
-        for name, mask in self.pruning_masks.items():
-            new_out_channels[name] = int(mask.sum().item())
-        
-        # For simplicity in this demo, we apply soft pruning
-        # A full implementation would reconstruct the entire model architecture
-        # which requires knowing the exact model structure
-        
-        print("Note: Full model rebuilding requires model-specific logic.")
-        print("Applying soft pruning (zeroing weights) instead.")
+        # Apply soft pruning
+        print("Note: Applying soft pruning (zeroing weights).")
+        print("For hard pruning (physical channel removal), see PRUNING_GUIDE.md")
         self.apply_pruning_masks()
         
         return self.model
