@@ -118,13 +118,12 @@ class L1Pruner:
         for name, module in self.model.named_modules():
             if isinstance(module, nn.Conv2d) and name in self.pruning_masks:
                 mask = self.pruning_masks[name]
-                # Zero out weights of pruned channels
+                # Zero out weights of pruned channels using vectorized operations
                 with torch.no_grad():
-                    for channel_idx, keep in enumerate(mask):
-                        if not keep:
-                            module.weight.data[channel_idx] = 0
-                            if module.bias is not None:
-                                module.bias.data[channel_idx] = 0
+                    # Use boolean indexing for efficient zeroing
+                    module.weight.data[~mask] = 0
+                    if module.bias is not None:
+                        module.bias.data[~mask] = 0
     
     def rebuild_model(self) -> nn.Module:
         """

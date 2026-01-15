@@ -9,11 +9,12 @@ It shows the complete workflow including:
 4. Comparing statistics before and after pruning
 """
 
+import argparse
+import datetime
 import torch
 import torch.nn as nn
 from nets.segformer import SegFormer
 from nets.pruning import L1Pruner, validate_pruned_model, count_parameters
-import argparse
 
 
 def print_separator(title=""):
@@ -206,7 +207,6 @@ def main():
     if args.save_path:
         save_path = args.save_path
     else:
-        import datetime
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         save_path = f'pruned_segformer_{args.phi}_ratio{args.pruning_ratio:.2f}_{timestamp}.pth'
     
