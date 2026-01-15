@@ -98,8 +98,20 @@ class SimpleL1Pruner(BasePruner):
         if hasattr(self.original_model, 'backbone'):
             for name, module in self.original_model.backbone.named_modules():
                 if isinstance(module, nn.Conv2d):
-                    # 跳过patch_embed层（这些是关键的downsampling层）
-                    if 'patch_embed' not in name and 'proj' not in name:
+                    # 跳过关键的结构层
+                    # 使用更健壮的检查方式
+                    is_critical_layer = False
+                    
+                    # Check if this is a patch embedding layer
+                    if 'patch_embed' in name.lower() or 'proj' in name.lower():
+                        is_critical_layer = True
+                    
+                    # Check if this is the first conv in a block
+                    parent_modules = name.split('.')
+                    if len(parent_modules) > 0 and parent_modules[0] in ['conv1', 'downsample']:
+                        is_critical_layer = True
+                    
+                    if not is_critical_layer:
                         full_name = f"backbone.{name}"
                         prunable_layers.append((full_name, module))
         

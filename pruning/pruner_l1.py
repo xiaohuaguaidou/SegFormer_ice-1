@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from typing import List, Optional
 from .pruner_base import BasePruner
+from .utils_pruning import count_parameters
 
 try:
     import torch_pruning as tp
@@ -159,8 +160,6 @@ class L1Pruner(BasePruner):
         """
         记录剪枝信息
         """
-        from .utils_pruning import count_parameters
-        
         if self.pruned_model is not None:
             pruned_params = count_parameters(self.pruned_model)
             original_params = count_parameters(self.original_model)

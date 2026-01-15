@@ -92,7 +92,7 @@ def load_model(model_path, num_classes, phi, device):
             # 过滤掉不匹配的键
             load_key, no_load_key, temp_dict = [], [], {}
             for k, v in pretrained_dict.items():
-                if k in model_dict.keys() and np.shape(model_dict[k]) == np.shape(v):
+                if k in model_dict.keys() and model_dict[k].shape == v.shape:
                     temp_dict[k] = v
                     load_key.append(k)
                 else:

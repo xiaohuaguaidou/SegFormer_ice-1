@@ -96,7 +96,12 @@ def calculate_flops(model: nn.Module, input_shape: Tuple[int, int, int],
         from ptflops import get_model_complexity_info
         
         if device is None:
-            device = next(model.parameters()).device
+            # Safely get device from model parameters
+            try:
+                device = next(model.parameters()).device
+            except StopIteration:
+                # Model has no parameters, use CPU as default
+                device = torch.device('cpu')
         
         model_copy = model.to(device)
         
