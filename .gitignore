@@ -1,0 +1,3 @@
+logs_pruning/
+__pycache__/
+*.pyc
