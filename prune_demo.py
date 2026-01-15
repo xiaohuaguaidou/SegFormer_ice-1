@@ -122,7 +122,7 @@ def demo_l1_pruning(
     
     if validation_success:
         with torch.no_grad():
-            pruned_output = model(dummy_input)
+            pruned_output = pruned_model(dummy_input)
         print(f"  Output shape: {pruned_output.shape}")
         
         # Check output difference
