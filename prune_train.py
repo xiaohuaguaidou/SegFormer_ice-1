@@ -9,7 +9,7 @@ import argparse
 import torch
 import numpy as np
 from nets.segformer import SegFormer
-from pruning import L1Pruner
+from pruning import L1Pruner, SimpleL1Pruner
 from pruning.utils_pruning import (
     print_model_info,
     compare_models,
@@ -159,33 +159,52 @@ def main():
     print(f"剪枝率: {args.pruning_rate:.2%}")
     print(f"{'='*60}\n")
     
+    # 尝试使用标准L1剪枝器，如果失败则使用简化版本
+    pruned_model = None
+    pruning_success = False
+    
     if args.pruning_method == 'l1':
-        pruner = L1Pruner(original_model, args.pruning_rate)
-        pruned_model = pruner.prune(example_inputs)
+        try:
+            print("尝试使用标准L1剪枝器（基于torch_pruning）...")
+            pruner = L1Pruner(original_model, args.pruning_rate)
+            pruned_model = pruner.prune(example_inputs)
+            pruning_success = True
+        except Exception as e:
+            print(f"\n标准L1剪枝失败: {e}")
+            print("\n切换到简化L1剪枝器...")
+            print("注意: 简化版本将生成剪枝计划而不直接修改模型结构")
+            
+            pruner = SimpleL1Pruner(original_model, args.pruning_rate)
+            pruned_model = pruner.prune(example_inputs)
+            pruning_success = False  # 标记为未真正剪枝
     else:
         raise ValueError(f"不支持的剪枝方法: {args.pruning_method}")
     
     # 打印剪枝后模型信息
-    print_model_info(
-        pruned_model,
-        model_name="剪枝后模型",
-        input_shape=input_shape,
-        device=device
-    )
-    
-    # 对比模型
-    compare_models(
-        original_model,
-        pruned_model,
-        input_shape=input_shape,
-        device=device
-    )
+    if pruning_success:
+        print_model_info(
+            pruned_model,
+            model_name="剪枝后模型",
+            input_shape=input_shape,
+            device=device
+        )
+        
+        # 对比模型
+        compare_models(
+            original_model,
+            pruned_model,
+            input_shape=input_shape,
+            device=device
+        )
+    else:
+        print("\n注意: 由于模型包含自定义模块，未能直接修改模型结构")
+        print("已生成剪枝计划，保存在统计文件中")
     
     # 创建保存目录
     save_dir = os.path.join(args.save_dir, args.pruning_method, args.phi)
     os.makedirs(save_dir, exist_ok=True)
     
-    # 保存剪枝后的模型
+    # 保存剪枝后的模型（即使结构未改变也保存，以便后续使用）
     model_save_path = os.path.join(
         save_dir,
         f'{args.phi}_pruned_{args.pruning_rate}.pth'
@@ -209,6 +228,7 @@ def main():
         'pruning_config': {
             'method': args.pruning_method,
             'pruning_rate': args.pruning_rate,
+            'actual_pruning_applied': pruning_success,
         },
         'original_model': {
             'parameters': original_params,
@@ -223,23 +243,36 @@ def main():
             'flops_G': round(pruned_flops / 1e9, 2),
         },
         'reduction': {
-            'parameters_reduction_percent': round((1 - pruned_params / original_params) * 100, 2),
-            'flops_reduction_percent': round((1 - pruned_flops / original_flops) * 100, 2) if original_flops > 0 else 0,
+            'parameters_reduction_percent': round((1 - pruned_params / original_params) * 100, 2) if pruning_success else 0,
+            'flops_reduction_percent': round((1 - pruned_flops / original_flops) * 100, 2) if original_flops > 0 and pruning_success else 0,
         },
         'model_save_path': model_save_path,
+        'pruning_info': pruner.get_pruning_info(),
     }
     
     results_save_path = os.path.join(save_dir, 'pruning_results.json')
     save_pruning_results(results, results_save_path)
     
     print(f"\n{'='*60}")
-    print("剪枝完成！")
+    if pruning_success:
+        print("剪枝完成！")
+    else:
+        print("剪枝分析完成！")
     print(f"{'='*60}")
-    print(f"剪枝后模型保存位置: {model_save_path}")
+    print(f"模型保存位置: {model_save_path}")
     print(f"统计结果保存位置: {results_save_path}")
-    print(f"\n提示: 剪枝后的模型需要进行微调以恢复精度")
-    print(f"可以使用 train.py 加载剪枝后的模型进行微调:")
-    print(f"  python train.py --model_path {model_save_path} --phi {args.phi} --num_classes {args.num_classes}")
+    
+    if not pruning_success:
+        print(f"\n重要提示:")
+        print(f"由于此SegFormer版本使用了自定义KAN层，torch_pruning无法直接应用。")
+        print(f"已生成详细的剪枝计划，您可以:")
+        print(f"1. 查看pruning_results.json中的剪枝计划")
+        print(f"2. 使用该计划进行知识蒸馏训练一个更小的模型")
+        print(f"3. 考虑使用标准SegFormer（不含KAN层）进行剪枝")
+    else:
+        print(f"\n提示: 剪枝后的模型需要进行微调以恢复精度")
+        print(f"可以使用 train.py 加载剪枝后的模型进行微调:")
+        print(f"  python train.py --model_path {model_save_path} --phi {args.phi} --num_classes {args.num_classes}")
     print(f"{'='*60}\n")
 
 

@@ -6,6 +6,7 @@
 
 from .pruner_base import BasePruner
 from .pruner_l1 import L1Pruner
+from .pruner_simple import SimpleL1Pruner
 from .utils_pruning import (
     count_parameters,
     count_trainable_parameters,
@@ -20,6 +21,7 @@ from .utils_pruning import (
 __all__ = [
     'BasePruner',
     'L1Pruner',
+    'SimpleL1Pruner',
     'count_parameters',
     'count_trainable_parameters',
     'measure_inference_time',

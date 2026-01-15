@@ -52,6 +52,7 @@ class L1Pruner(BasePruner):
             剪枝后的模型
         """
         print(f"\n开始执行L1范数全局剪枝 (剪枝率: {self.pruning_rate:.2%})...")
+        print("注意: 由于SegFormer使用了自定义KAN层，剪枝仅应用于backbone部分")
         
         # 将模型设置为评估模式
         self.original_model.eval()
@@ -70,7 +71,7 @@ class L1Pruner(BasePruner):
             # 创建重要性评估器 - 使用L1范数
             importance = tp.importance.MagnitudeImportance(p=1)  # p=1 表示L1范数
             
-            # 创建剪枝器
+            # 创建剪枝器，使用iterative模式避免自定义模块问题
             pruner = tp.pruner.MagnitudePruner(
                 model=self.original_model,
                 example_inputs=example_inputs,
@@ -78,11 +79,16 @@ class L1Pruner(BasePruner):
                 pruning_ratio=self.pruning_rate,
                 ignored_layers=ignored_layers,
                 global_pruning=True,  # 全局剪枝
+                iterative_steps=1,  # 单步剪枝
             )
             
             # 执行剪枝
             print("正在分析模型结构...")
-            pruner.step()
+            
+            # 使用更安全的迭代方式
+            for i in range(pruner.iterative_steps):
+                pruner.step()
+                print(f"剪枝步骤 {i+1}/{pruner.iterative_steps} 完成")
             
             print("剪枝完成！")
             
@@ -95,7 +101,12 @@ class L1Pruner(BasePruner):
             return self.pruned_model
             
         except Exception as e:
-            print(f"剪枝过程中出错: {e}")
+            print(f"\n剪枝过程中出错: {e}")
+            print("\n由于SegFormer使用了自定义模块（KAN层），torch_pruning无法完全支持。")
+            print("建议:")
+            print("1. 使用更简单的backbone版本 (b0, b1)")
+            print("2. 考虑手动实现剪枝逻辑")
+            print("3. 或者修改模型结构以使用标准PyTorch模块")
             import traceback
             traceback.print_exc()
             raise
@@ -103,35 +114,44 @@ class L1Pruner(BasePruner):
     def _collect_ignored_layers(self) -> List[nn.Module]:
         """
         自动收集需要忽略的层
-        通常包括：
-        1. 第一个卷积层
-        2. 最后的分类层
-        3. 批归一化层
+        由于SegFormer使用了自定义KAN层，我们需要更加保守地选择要剪枝的层
         
         Returns:
             需要忽略的层列表
         """
         ignored_layers = []
         
-        # 收集所有卷积层
-        conv_layers = []
-        for name, module in self.original_model.named_modules():
-            if isinstance(module, nn.Conv2d):
-                conv_layers.append((name, module))
+        # 完全忽略decode_head，因为它包含自定义KAN层
+        if hasattr(self.original_model, 'decode_head'):
+            ignored_layers.append(self.original_model.decode_head)
+            print(f"忽略整个decode_head模块（包含自定义KAN层）")
         
-        if len(conv_layers) > 0:
-            # 忽略第一个卷积层（特征提取的入口）
-            first_conv_name, first_conv = conv_layers[0]
-            ignored_layers.append(first_conv)
-            print(f"忽略第一个卷积层: {first_conv_name}")
-        
-        # 查找最后的分类层（通常是1x1卷积）
-        for name, module in self.original_model.named_modules():
-            # SegFormer的分类层通常命名为 linear_pred 或类似名称
-            if 'linear_pred' in name or 'classifier' in name or 'head' in name:
+        # 收集backbone中的卷积层
+        backbone_conv_layers = []
+        if hasattr(self.original_model, 'backbone'):
+            for name, module in self.original_model.backbone.named_modules():
                 if isinstance(module, nn.Conv2d):
-                    ignored_layers.append(module)
-                    print(f"忽略分类层: {name}")
+                    backbone_conv_layers.append((name, module))
+        
+        if len(backbone_conv_layers) > 0:
+            # 忽略backbone的第一个卷积层（特征提取的入口）
+            first_conv_name, first_conv = backbone_conv_layers[0]
+            ignored_layers.append(first_conv)
+            print(f"忽略第一个卷积层: backbone.{first_conv_name}")
+            
+            # 忽略每个stage的第一个卷积（patch embedding）
+            for name, module in self.original_model.backbone.named_modules():
+                if 'patch_embed' in name and isinstance(module, nn.Conv2d):
+                    if module not in ignored_layers:
+                        ignored_layers.append(module)
+                        print(f"忽略patch embedding层: backbone.{name}")
+        
+        # 忽略所有BatchNorm层，因为它们依赖于通道数
+        for name, module in self.original_model.named_modules():
+            if isinstance(module, (nn.BatchNorm2d, nn.LayerNorm, nn.GroupNorm)):
+                ignored_layers.append(module)
+        
+        print(f"忽略所有BatchNorm/LayerNorm层以保持稳定性")
         
         return ignored_layers
     
